@@ -1,27 +1,30 @@
-const { Connection } = require('@solana/web3.js');
-const { Pool } = require('@raydium-io/raydium-sdk');
-const redis = require('redis');
+// const { getBestSwapQuote, getPossiblePaths } = require('./utils/qoutecalculator');
 
-const redisClient = redis.createClient();
-const connection = new Connection('https://api.mainnet-beta.solana.com');
+import {getBestSwapQuote, getPossiblePaths } from './utils/qoutecalculator.js'
 
-async function fetchAndCachePoolData(poolAddress) {
-  const pool = await Pool.load(connection, poolAddress);
-  const reserveData = {
-    baseReserve: pool.baseTokenAmount.toString(),
-    quoteReserve: pool.quoteTokenAmount.toString(),
-  };
+async function calculateBestQuote(tokenPair, amount, side) {
+  const paths = await getPossiblePaths(tokenPair);
+  let bestQuote = null;
+  let bestStrategy = null;
 
-  await redisClient.set(poolAddress, JSON.stringify(reserveData), redis.print);
-}
+  for (let split = 0.1; split <= 1; split += 0.1) {
+    const splitAmount = amount * split;
 
-function startFetchingPoolData(poolAddresses) {
-  setInterval(async () => {
-    for (const address of poolAddresses) {
-      await fetchAndCachePoolData(address);
+    for (let path of paths) {
+      const quote = await getBestSwapQuote(path, splitAmount, side);
+
+      if (!bestQuote || quote > bestQuote) {
+        bestQuote = quote;
+        bestStrategy = { path, split };
+      }
     }
-  }, 60 * 1000); // Fetch every minute
+  }
+
+  return { bestQuote, bestStrategy };
 }
 
-const poolAddresses = ['POOL_ADDRESS_1', 'POOL_ADDRESS_2']; // Add Raydium pool addresses
-startFetchingPoolData(poolAddresses);
+// Test with ETH/USDC pair, selling 1 ETH
+calculateBestQuote('ETH-USDC', 1, 'SELL').then(result => {
+  console.log('Best Quote:', result.bestQuote);
+  console.log('Best Strategy:', result.bestStrategy);
+});

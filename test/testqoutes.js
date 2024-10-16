@@ -1,42 +1,20 @@
-const { redisClient } = require('./poolDataFetcher');
-const { getBestSplitQuote } = require('./quotecalculator');
+import assert from 'assert';
+import {getBestSwapQuote, getPossiblePaths } from '../utils/qoutecalculator.js'
 
-async function waitForPoolData(symbol) {
-  let retries = 0;
-  while (retries < 10) {
-    try {
-      await getBestSplitQuote(symbol, 1);
-      return;
-    } catch (error) {
-      console.log(`Waiting for pool data for ${symbol}...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      retries++;
-    }
-  }
-  throw new Error(`Timeout waiting for pool data for ${symbol}`);
-}
 
-async function runTest() {
-  try {
-    // Ensure Redis client is connected
-    if (!redisClient.isOpen) {
-      await redisClient.connect();
-    }
+describe('Raydium Swap Quote Tests', () => {
+  it('should return possible paths for ETH/USDC', async () => {
+    const paths = await getPossiblePaths('ETH/USDC');
+    assert.deepStrictEqual(paths, [['ETH', 'USDC'], ['ETH', 'SOL', 'USDC']]);
+  });
 
-    const symbol = 'ETH/USDC';
-    const amount = 1; // 1 ETH to swap
+  it('should calculate best swap quote for a direct path', async () => {
+    const quote = await getBestSwapQuote(['ETH', 'USDC'], 1, 'SELL');
+    assert(quote > 0, 'Quote should be greater than zero');
+  });
 
-    await waitForPoolData(symbol);
-
-    const bestQuote = await getBestSplitQuote(symbol, amount);
-    console.log(`Best swap quote for ${amount} ETH: ${bestQuote} USDC`);
-
-  } catch (error) {
-    console.error('Error in test:', error);
-  } finally {
-    // Close the Redis connection
-    await redisClient.quit();
-  }
-}
-
-runTest();
+  it('should calculate best swap quote for a multi-hop path', async () => {
+    const quote = await getBestSwapQuote(['ETH', 'SOL', 'USDC'], 1, 'SELL');
+    assert(quote > 0, 'Quote should be greater than zero');
+  });
+});
